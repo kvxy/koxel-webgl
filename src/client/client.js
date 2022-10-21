@@ -1,6 +1,3 @@
-
-/** ./src/client/client.js **/
-
 // Start client
 (function() {
   // fps counter
@@ -21,25 +18,3 @@
 
   window.onload = init;
 })();
-
-
-/** ./src/client/clientEngine.js **/
-
-function ClientEngine() {
-  this.gameEngine = null;
-  this.graphicsEngine = new GraphicsEngine();
-}
-
-
-/** ./src/client/graphics/graphicsEngine.js **/
-
-// Everything WebGL goes here:
-function GraphicsEngine() {
-
-}
-
-
-/** ./src/server/serverEngine.js **/
-
-console.log('serverEngine.js')
-
