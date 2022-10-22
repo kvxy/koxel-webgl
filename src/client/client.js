@@ -1,4 +1,4 @@
-// Start client
+// start client
 (function() {
   // fps counter
   let then = 0;
@@ -11,9 +11,10 @@
     const fps = 1 / deltaTime * 60;
     fpsElem.textContent = fps.toFixed(1);
   }
-  // initialize client
+  // initialize all of client
   function init() {
-    const engine = new ClientEngine();
+    const engine = window.engine = new ClientEngine();
+    engine.graphicsEngine.init();
   }
 
   window.onload = init;
