@@ -1,0 +1,1 @@
+nodemon server.js -L --ignore public/koxel.js -e js,json,html,css,glsl
