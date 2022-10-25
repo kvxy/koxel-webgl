@@ -18,6 +18,14 @@
   function init() {
     const engine = window.engine = new ClientEngine();
     engine.graphicsEngine.init();
+
+    draw();
+    function draw(now) {
+      if (tick % 60 === 0) fps(now);
+      engine.graphicsEngine.draw();
+      tick ++;
+      requestAnimationFrame(draw);
+    }
   }
 
   window.onload = init;
@@ -33,54 +41,128 @@ function ClientEngine() {
 }
 
 
+/** ./src/client/graphics/gpuResource.js **/
+
+// for rendering/computation over the GPU
+const GPUResource = (function () {
+
+  function GPUResource(gl, vertSource, fragSource) {
+    this.gl = gl;
+
+    // create shaders
+    const vertShader = createShader(gl, gl.VERTEX_SHADER, vertSource);
+    const fragShader = createShader(gl, gl.FRAGMENT_SHADER, fragSource);
+    
+    const program = this.program = gl.createProgram();
+    gl.attachShader(program, vertShader);
+    gl.attachShader(program, fragShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(program));
+    }
+  }
+
+  // load fragment/vertex shader
+  function createShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader)
+    }
+    return shader;
+  }
+
+  GPUResource.prototype.bind = function() {
+    this.gl.useProgram(this.program);
+  };
+
+  return GPUResource;
+
+})();
+
+
 /** ./src/client/graphics/graphicsEngine.js **/
 
 // Everything WebGL goes here:
-function GraphicsEngine() {
+const GraphicsEngine = (function()  {
+
+  function GraphicsEngine() {
+    // resolution calculations
+    this.pixelSize = 3;
+    this.width = Math.floor(window.innerWidth / this.pixelSize);
+    this.height = Math.floor(window.innerHeight / this.pixelSize);
+  }
   
-}
+  GraphicsEngine.prototype.init = function() {
+    const canvas = document.getElementById('glcanvas');
+    const gl = this.gl = canvas.getContext('webgl2');
+    if (!gl) {
+      return console.error('no WebGL2 :(');
+    }
 
-GraphicsEngine.prototype.init = function() {
-  const canvas = document.getElementById('glcanvas');
-  const gl = this.gl = canvas.getContext('webgl2');
-  if (!gl)
-    return console.error('no WebGL2 :(');
+    const renderer = new GPUResource(gl, voxelVertexGLSL, voxelFragmentGLSL);
+    const program = renderer.program;
+    renderer.bind(); // useProgram
 
-  // vertex shader
-  const vertShader = gl.createShader(gl.VERTEX_SHADER);
-  gl.shaderSource(vertShader, voxelVertexGLSL);
-  gl.compileShader(vertShader);
+    // uniforms
+    const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
+    const resolutionLocation = gl.getUniformLocation(program, 'resolution');
+    gl.uniform2f(resolutionLocation, this.width, this.height);
 
-  if (!gl.getShaderParameter(vertShader, gl.COMPILE_STATUS))
-    return console.log(gl.getShaderInfoLog(vertShader));
+    // screen quad
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1,-1, -1, 1, 1, 1,
+      1, 1, 1, -1, -1, -1
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-  // fragment shader
-  const fragShader = gl.createShader(gl.FRAGMENT_SHADER);
-  gl.shaderSource(fragShader, voxelFragmentGLSL);
-  gl.compileShader(fragShader);
+    // resize
+    canvas.width = this.width;
+    canvas.height = this.height;
+    gl.viewport(0, 0, this.width, this.height);
+  };
 
-  if (!gl.getShaderParameter(fragShader, gl.COMPILE_STATUS))
-    return console.log(gl.getShaderInfoLog(fragShader));
-  
-  // program
-  const program = this.program = gl.createProgram();
-  gl.attachShader(program, vertShader);
-  gl.attachShader(program, fragShader);
-  
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-    return console.log(gl.getProgramInfoLog(program));
-}
+  GraphicsEngine.prototype.draw = function() {
+    const gl = this.gl;
+    if (!this.n) this.n = 0; // TEMP
+    gl.uniform1f(this.timeLocation, this.n += 1 / 60)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  };
+
+  return GraphicsEngine;
+
+})();
+
+
+/** ./src/client/graphics/uniformBufferObject.js **/
+
+// gpu data storage (think voxel octrees)
+const UniformBufferObject = (function()  {
+
+  function UniformBufferObject() {
+
+  }
+
+  return UniformBufferObject;
+
+})();
 
 
 /** ./src/client/graphics/voxelFragment.glsl **/
 
 const voxelFragmentGLSL = 
 ` #version 300 es
-  precision mediump float;
+  precision highp float;
   
-  vec2 iResolution = vec2(400, 300);
-  float iTime = 1.0;
+  in vec2 iResolution;
+  //float iTime = 1.0;
+  in float iTime;
   
   const float pi = 3.141592;
   const float tau = 2.0*pi;
@@ -109,7 +191,7 @@ const voxelFragmentGLSL =
       float diffuseAttn = max(dot(norm, lightDir), 0.0);
       vec3 light = vec3(1.0,0.9,0.9);
       
-      vec3 ambient = vec3(0.2, 0.2, 0.3);
+      vec3 ambient = vec3(0.4, 0.4, 0.6);
       
       vec3 reflected = reflect(rd, norm);
       float specularAttn = max(dot(reflected, lightDir), 0.0);
@@ -195,24 +277,31 @@ const voxelFragmentGLSL =
       hit h = intersect(ro, rd); 
   
       if(h.didHit) {
-          outColor = vec4(h.col,0);
+          outColor = vec4(h.col,1);
       } else{
-          outColor = vec4(0,0,0,0);
+          outColor = vec4(0,0,0,1);
       }
-  }
-  
-  `;
+  }`;
 
 
 /** ./src/client/graphics/voxelVertex.glsl **/
 
 const voxelVertexGLSL = 
 ` #version 300 es
+  precision highp float;
   
-  in vec4 position;
+  uniform float time;
+  uniform vec2 resolution;
+  
+  layout (location = 0) in vec4 position;
+  
+  out float iTime;
+  out vec2 iResolution;
   
   void main() {
     gl_Position = position;
+    iTime = time;
+    iResolution = resolution;
   }`;
 
 

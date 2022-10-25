@@ -15,6 +15,14 @@
   function init() {
     const engine = window.engine = new ClientEngine();
     engine.graphicsEngine.init();
+
+    draw();
+    function draw(now) {
+      if (tick % 60 === 0) fps(now);
+      engine.graphicsEngine.draw();
+      tick ++;
+      requestAnimationFrame(draw);
+    }
   }
 
   window.onload = init;
