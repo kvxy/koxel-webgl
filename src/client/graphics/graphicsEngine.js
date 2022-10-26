@@ -2,7 +2,7 @@
 const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
-    // resolution calculations
+    // resolution
     this.pixelSize = 3;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
@@ -20,15 +20,24 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
 
     // uniforms
-    const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
-    const resolutionLocation = gl.getUniformLocation(program, 'resolution');
-    gl.uniform2f(resolutionLocation, this.width, this.height);
+    //const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
+    //const resolutionLocation = gl.getUniformLocation(program, 'resolution');
+    //gl.uniform2f(resolutionLocation, this.width, this.height);
 
-    // screen quad
+    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution'], 'scene', 0);
+    sceneUB.bind();
+    sceneUB.updateVariable('u_resolution', new Float32Array([this.width, this.height]));
+    sceneUB.updateVariable('u_time', new Float32Array(1));
+
+    // vao
+    const vao = this.vao = gl.createVertexArray();
+    gl.bindVertexArray(vao); // don't unbind
+
+    // fullscreen quad webgl moment :(
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1,-1, -1, 1, 1, 1,
+      -1, -1, -1, 1, 1, 1,
       1, 1, 1, -1, -1, -1
     ]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
@@ -43,7 +52,7 @@ const GraphicsEngine = (function()  {
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
     if (!this.n) this.n = 0; // TEMP
-    gl.uniform1f(this.timeLocation, this.n += 1 / 60)
+    this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };

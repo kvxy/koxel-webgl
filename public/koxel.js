@@ -46,6 +46,7 @@ function ClientEngine() {
 // for rendering/computation over the GPU
 const GPUResource = (function () {
 
+  // gl:WebGL2RenderingContext, vertSource:String, fragSource:String
   function GPUResource(gl, vertSource, fragSource) {
     this.gl = gl;
 
@@ -63,6 +64,7 @@ const GPUResource = (function () {
   }
 
   // load fragment/vertex shader
+  // gl:WebGL2RenderingContext, type:WebGLShader, source:String
   function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -89,7 +91,7 @@ const GPUResource = (function () {
 const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
-    // resolution calculations
+    // resolution
     this.pixelSize = 3;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
@@ -107,15 +109,24 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
 
     // uniforms
-    const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
-    const resolutionLocation = gl.getUniformLocation(program, 'resolution');
-    gl.uniform2f(resolutionLocation, this.width, this.height);
+    //const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
+    //const resolutionLocation = gl.getUniformLocation(program, 'resolution');
+    //gl.uniform2f(resolutionLocation, this.width, this.height);
 
-    // screen quad
+    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution'], 'scene', 0);
+    sceneUB.bind();
+    sceneUB.updateVariable('u_resolution', new Float32Array([this.width, this.height]));
+    sceneUB.updateVariable('u_time', new Float32Array(1));
+
+    // vao
+    const vao = this.vao = gl.createVertexArray();
+    gl.bindVertexArray(vao); // don't unbind
+
+    // fullscreen quad webgl moment :(
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1,-1, -1, 1, 1, 1,
+      -1, -1, -1, 1, 1, 1,
       1, 1, 1, -1, -1, -1
     ]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
@@ -130,7 +141,7 @@ const GraphicsEngine = (function()  {
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
     if (!this.n) this.n = 0; // TEMP
-    gl.uniform1f(this.timeLocation, this.n += 1 / 60)
+    this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
@@ -140,16 +151,61 @@ const GraphicsEngine = (function()  {
 })();
 
 
-/** ./src/client/graphics/uniformBufferObject.js **/
+/** ./src/client/graphics/uniformBuffer.js **/
 
-// gpu data storage (think voxel octrees)
-const UniformBufferObject = (function()  {
+const UniformBuffer = (function()  {
 
-  function UniformBufferObject() {
+  // gl:WebGL2RenderingContext, program:WebGLProgram, variableNames:String[], uniformBlockName:String, bindIndex:Number
+  function UniformBuffer(gl, program, variableNames, uniformBlockName, bindIndex = 0) {
+    this.gl = gl;
 
+    const blockIndex = gl.getUniformBlockIndex(program, uniformBlockName);
+    const blockSize = gl.getActiveUniformBlockParameter(program, blockIndex, gl.UNIFORM_BLOCK_DATA_SIZE);
+
+    const buffer = this.buffer = gl.createBuffer();
+    gl.bindBuffer(gl.UNIFORM_BUFFER, buffer);
+    gl.bufferData(gl.UNIFORM_BUFFER, blockSize, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, bindIndex, buffer);
+
+    const variableIndices = gl.getUniformIndices(program, variableNames);
+    const variableOffsets = gl.getActiveUniforms(program, variableIndices, gl.UNIFORM_OFFSET);
+
+    this.variableInfo = {};
+    variableNames.forEach((name, index) => {
+      this.variableInfo[name] = {
+        index:  variableIndices[index],
+        offset: variableOffsets[index]
+      };
+    });
+
+    const uniformBlockIndex = gl.getUniformBlockIndex(program, uniformBlockName);
+    gl.uniformBlockBinding(program, uniformBlockIndex, bindIndex);
   }
 
-  return UniformBufferObject;
+  // variable:String, data:Any
+  UniformBuffer.prototype.updateVariable = function(variableName, ...data) {
+    const gl = this.gl;
+    this.gl.bufferSubData(
+      gl.UNIFORM_BUFFER,
+      this.variableInfo[variableName].offset,
+      typeof data[0] === 'object' ? data[0] : new Float32Array(data),
+      0);
+  };
+
+  // updates everything
+  UniformBuffer.prototype.update = function() {};
+
+  UniformBuffer.prototype.bind = function() {
+    const gl = this.gl;
+    gl.bindBuffer(gl.UNIFORM_BUFFER, this.buffer);
+  };
+
+  UniformBuffer.prototype.unbind = function() {
+    gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+  };
+
+  return UniformBuffer;
 
 })();
 
@@ -158,129 +214,37 @@ const UniformBufferObject = (function()  {
 
 const voxelFragmentGLSL = 
 ` #version 300 es
-  precision highp float;
+  precision mediump float;
   
-  in vec2 iResolution;
-  //float iTime = 1.0;
-  in float iTime;
-  
-  const float pi = 3.141592;
-  const float tau = 2.0*pi;
-  
-  //#define TIME (3.0*tau/4.0)
-  #define TIME iTime/2.0
-  
-  const float sphereRadius = 15.0;
-  const float camRadius = 2.0*sphereRadius;
-  
-  struct hit {
-      bool didHit;
-      vec3 col;
+  uniform scene {
+    float u_time;
+    vec2 u_resolution;
   };
   
-  hit getVoxel(ivec3 p) {
-      if (length(vec3(p)) < sphereRadius)
-          return hit(true, vec3(p) / (sphereRadius * 2.0) + 0.6);
-      else
-          return hit(false, vec3(0,0,0));
+  // algorithm from http://www.cse.yorku.ca/~amana/research/grid.pdf (by John Amanatides & Andrew Woo)
+  vec3 voxelTrace(vec3 rayPos, vec3 rayDir) {
+    
+    vec3 voxelPos = floor(rayPos);
+    vec3 step = sign(rayDir);
   
+    //vec3 tDelta = 
+    //vec3 tMax = 
+  
+  
+    int maxSteps = 70;
+    for (int i = 0; i < maxSteps; i ++) {
+  
+    }
+  
+    return vec3(gl_FragCoord.x / u_resolution.x, gl_FragCoord.y / u_resolution.y, 1.0 - gl_FragCoord.x / u_resolution.x);
   }
   
-  vec3 lighting(vec3 norm, vec3 pos, vec3 rd, vec3 col) {
-      vec3 lightDir = normalize(vec3(-1.0, 3.0, -1.0));
-      float diffuseAttn = max(dot(norm, lightDir), 0.0);
-      vec3 light = vec3(1.0,0.9,0.9);
-      
-      vec3 ambient = vec3(0.4, 0.4, 0.6);
-      
-      vec3 reflected = reflect(rd, norm);
-      float specularAttn = max(dot(reflected, lightDir), 0.0);
-      
-      return col*(diffuseAttn*light*1.0 + specularAttn*light*0.6 + ambient);
-  }
-  
-  // Voxel ray casting algorithm from "A Fast Voxel Traversal Algorithm for Ray Tracing" 
-  // by John Amanatides and Andrew Woo
-  // http://www.cse.yorku.ca/~amana/research/grid.pdf
-  hit intersect(vec3 ro, vec3 rd) {
-      //Todo: find out why this is so slow
-      vec3 pos = floor(ro);
-      
-      vec3 step = sign(rd);
-      vec3 tDelta = step / rd;
-  
-      
-      float tMaxX, tMaxY, tMaxZ;
-      
-      vec3 fr = fract(ro);
-      
-      tMaxX = tDelta.x * ((rd.x>0.0) ? (1.0 - fr.x) : fr.x);
-      tMaxY = tDelta.y * ((rd.y>0.0) ? (1.0 - fr.y) : fr.y);
-      tMaxZ = tDelta.z * ((rd.z>0.0) ? (1.0 - fr.z) : fr.z);
-  
-      vec3 norm;
-      const int maxTrace = 100;
-      
-      for (int i = 0; i < maxTrace; i++) {
-          hit h = getVoxel(ivec3(pos));
-          if (h.didHit) {
-              return hit(true, lighting(norm, pos, rd, h.col));
-          }
-  
-          if (tMaxX < tMaxY) {
-              if (tMaxZ < tMaxX) {
-                  tMaxZ += tDelta.z;
-                  pos.z += step.z;
-                  norm = vec3(0, 0,-step.z);
-              } else {
-                  tMaxX += tDelta.x;
-              	pos.x += step.x;
-                  norm = vec3(-step.x, 0, 0);
-              }
-          } else {
-              if (tMaxZ < tMaxY) {
-                  tMaxZ += tDelta.z;
-                  pos.z += step.z;
-                  norm = vec3(0, 0, -step.z);
-              } else {
-              	tMaxY += tDelta.y;
-              	pos.y += step.y;
-                  norm = vec3(0, -step.y, 0);
-              }
-          }
-      }
-  
-   	return hit(false, vec3(0,0,0));
-  }
-  
-  //in vec4 gl_FragCoord;
   out vec4 outColor;
   
-  void main()
-  {
-      vec2 fragCoord = vec2(gl_FragCoord.x, gl_FragCoord.y);
-      vec2 uv = fragCoord / iResolution.xy - 0.5;
-      vec3 worldUp = vec3(0,1,0);
-      vec3 camPos = vec3(camRadius*sin(TIME), 10, 1.0*camRadius*cos(TIME));
-      vec3 lookAt = vec3(0,0,0);
-      vec3 camDir = normalize(lookAt - camPos);
-      vec3 camRight = normalize(cross(camDir, worldUp));
-      vec3 camUp = cross(camRight, camDir);
-      
-      vec3 filmCentre = camPos + camDir*0.3;
-      vec2 filmSize = vec2(1,iResolution.y / iResolution.x);
-      
-      vec3 filmPos = filmCentre + uv.x*filmSize.x*camRight + uv.y*filmSize.y*camUp;
-      vec3 ro = camPos;
-      vec3 rd = normalize(filmPos - camPos);
-      
-      hit h = intersect(ro, rd); 
-  
-      if(h.didHit) {
-          outColor = vec4(h.col,1);
-      } else{
-          outColor = vec4(0,0,0,1);
-      }
+  void main() {
+    vec3 rayPos = vec3(0.0, 0.0, 0.0);
+    vec3 rayDir = vec3(0.0, 0.0, 0.0);
+    outColor = vec4(voxelTrace(rayPos, rayDir), 1.0);
   }`;
 
 
@@ -288,20 +252,12 @@ const voxelFragmentGLSL =
 
 const voxelVertexGLSL = 
 ` #version 300 es
-  precision highp float;
-  
-  uniform float time;
-  uniform vec2 resolution;
+  precision mediump float;
   
   layout (location = 0) in vec4 position;
   
-  out float iTime;
-  out vec2 iResolution;
-  
   void main() {
     gl_Position = position;
-    iTime = time;
-    iResolution = resolution;
   }`;
 
 

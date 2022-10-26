@@ -1,6 +1,7 @@
 // for rendering/computation over the GPU
 const GPUResource = (function () {
 
+  // gl:WebGL2RenderingContext, vertSource:String, fragSource:String
   function GPUResource(gl, vertSource, fragSource) {
     this.gl = gl;
 
@@ -18,6 +19,7 @@ const GPUResource = (function () {
   }
 
   // load fragment/vertex shader
+  // gl:WebGL2RenderingContext, type:WebGLShader, source:String
   function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
