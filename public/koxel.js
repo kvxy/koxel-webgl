@@ -92,7 +92,7 @@ const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
     // resolution
-    this.pixelSize = 3;
+    this.pixelSize = 1;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
   }
@@ -108,15 +108,16 @@ const GraphicsEngine = (function()  {
     const program = renderer.program;
     renderer.bind(); // useProgram
 
-    // uniforms
-    //const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
-    //const resolutionLocation = gl.getUniformLocation(program, 'resolution');
-    //gl.uniform2f(resolutionLocation, this.width, this.height);
-
-    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution'], 'scene', 0);
+    // scene uniforms
+    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution', 'u_cameraPos', 'u_cameraDir', 'u_fov'], 'scene', 0);
     sceneUB.bind();
-    sceneUB.updateVariable('u_resolution', new Float32Array([this.width, this.height]));
-    sceneUB.updateVariable('u_time', new Float32Array(1));
+    // general scene stuff
+    sceneUB.updateVariable('u_resolution', this.width, this.height);
+    sceneUB.updateVariable('u_time', 1);
+    // camera
+    sceneUB.updateVariable('u_cameraPos', 0, 0, 0);
+    sceneUB.updateVariable('u_cameraDir', 0, 0, -0.8);
+    sceneUB.updateVariable('u_fov', 100 * Math.PI / 180.0);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -126,6 +127,7 @@ const GraphicsEngine = (function()  {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      //-1, -1, -1, 3, 3, -1,
       -1, -1, -1, 1, 1, 1,
       1, 1, 1, -1, -1, -1
     ]), gl.STATIC_DRAW);
@@ -142,6 +144,7 @@ const GraphicsEngine = (function()  {
     const gl = this.gl;
     if (!this.n) this.n = 0; // TEMP
     this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
+    this.sceneUB.updateVariable('u_cameraPos', Math.cos(this.n / 2) + 0.5, 0, Math.sin(this.n / 2) + 0.5);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
@@ -219,32 +222,67 @@ const voxelFragmentGLSL =
   uniform scene {
     float u_time;
     vec2 u_resolution;
+    vec3 u_cameraPos;
+    vec3 u_cameraDir;
+    float u_fov;
   };
   
-  // algorithm from http://www.cse.yorku.ca/~amana/research/grid.pdf (by John Amanatides & Andrew Woo)
-  vec3 voxelTrace(vec3 rayPos, vec3 rayDir) {
-    
-    vec3 voxelPos = floor(rayPos);
+  vec3 getVoxel(vec3 pos, out bool air) {
+    air = !(length(vec3(pos.x, pos.y + 10.0, pos.z + 40.0)) < 20.0);
+    return pos / 40.0 + 0.5; // color
+  }
+  
+  // Amanatides & Woo's fast voxel traversal algorithm
+  vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
+    vec3 voxelPos = floor(rayOri);
     vec3 step = sign(rayDir);
   
-    //vec3 tDelta = 
-    //vec3 tMax = 
+    vec3 tMax = sign(step + 1.0) - voxelPos * -step; 
+    vec3 tDelta = step / rayDir;
   
+    float lighting = 0.0;
   
-    int maxSteps = 70;
+    int maxSteps = 100;
     for (int i = 0; i < maxSteps; i ++) {
+      bool air;
+      vec3 voxel = getVoxel(voxelPos, air);
+      if (!air) {
+        return voxel * lighting;
+      }
   
+      if (tMax.x < tMax.y && tMax.x < tMax.z) {
+        voxelPos.x += step.x;
+        tMax.x += tDelta.x;
+        lighting = 0.6;
+      }
+      else if (tMax.y < tMax.z) {
+        voxelPos.y += step.y;
+        tMax.y += tDelta.y;
+        lighting = 1.0;
+      }
+      else {
+        voxelPos.z += step.z;
+        tMax.z += tDelta.z;
+        lighting = 0.4;
+      }
     }
   
-    return vec3(gl_FragCoord.x / u_resolution.x, gl_FragCoord.y / u_resolution.y, 1.0 - gl_FragCoord.x / u_resolution.x);
+    return vec3(0.0, 0.0, 0.0);
   }
   
   out vec4 outColor;
   
   void main() {
-    vec3 rayPos = vec3(0.0, 0.0, 0.0);
-    vec3 rayDir = vec3(0.0, 0.0, 0.0);
-    outColor = vec4(voxelTrace(rayPos, rayDir), 1.0);
+    // don't use matrix camera
+    vec2 screenPoint = 2.0 * gl_FragCoord.xy / u_resolution - 1.0;
+    vec2 cameraPoint = screenPoint * tan(u_fov * 0.5);
+    cameraPoint.x *= u_resolution.x / u_resolution.y;
+  
+    vec3 rayOri = u_cameraPos;
+    vec3 rayDir = vec3(cameraPoint.xy, -1.0) - rayOri;
+    rayDir = normalize(rayDir);
+  
+    outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
   }`;
 
 

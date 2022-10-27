@@ -3,7 +3,7 @@ const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
     // resolution
-    this.pixelSize = 3;
+    this.pixelSize = 1;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
   }
@@ -19,15 +19,16 @@ const GraphicsEngine = (function()  {
     const program = renderer.program;
     renderer.bind(); // useProgram
 
-    // uniforms
-    //const timeLocation = this.timeLocation = gl.getUniformLocation(program, 'time');
-    //const resolutionLocation = gl.getUniformLocation(program, 'resolution');
-    //gl.uniform2f(resolutionLocation, this.width, this.height);
-
-    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution'], 'scene', 0);
+    // scene uniforms
+    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution', 'u_cameraPos', 'u_cameraDir', 'u_fov'], 'scene', 0);
     sceneUB.bind();
-    sceneUB.updateVariable('u_resolution', new Float32Array([this.width, this.height]));
-    sceneUB.updateVariable('u_time', new Float32Array(1));
+    // general scene stuff
+    sceneUB.updateVariable('u_resolution', this.width, this.height);
+    sceneUB.updateVariable('u_time', 1);
+    // camera
+    sceneUB.updateVariable('u_cameraPos', 0, 0, 0);
+    sceneUB.updateVariable('u_cameraDir', 0, 0, -0.8);
+    sceneUB.updateVariable('u_fov', 100 * Math.PI / 180.0);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -37,6 +38,7 @@ const GraphicsEngine = (function()  {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      //-1, -1, -1, 3, 3, -1,
       -1, -1, -1, 1, 1, 1,
       1, 1, 1, -1, -1, -1
     ]), gl.STATIC_DRAW);
@@ -53,6 +55,7 @@ const GraphicsEngine = (function()  {
     const gl = this.gl;
     if (!this.n) this.n = 0; // TEMP
     this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
+    this.sceneUB.updateVariable('u_cameraPos', Math.cos(this.n / 2) + 0.5, 0, Math.sin(this.n / 2) + 0.5);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
