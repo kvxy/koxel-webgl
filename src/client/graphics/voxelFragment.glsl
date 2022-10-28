@@ -1,16 +1,15 @@
 #version 300 es
 precision mediump float;
 
-uniform scene {
-  float u_time;
+uniform camera {
   vec2 u_resolution;
   vec3 u_cameraPos;
-  vec3 u_cameraDir;
+  vec3 u_cameraRot;
   float u_fov;
 };
 
 vec3 getVoxel(vec3 pos, out bool air) {
-  air = !(length(vec3(pos.x, pos.y + 10.0, pos.z + 40.0)) < 20.0);
+  air = !(length(vec3(pos.xy, pos.z + 30.0)) < 10.0);
   return pos / 40.0 + 0.5; // color
 }
 
@@ -52,16 +51,19 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
   return vec3(0.0, 0.0, 0.0);
 }
 
+in mat4 cameraMatrix;
+
 out vec4 outColor;
 
 void main() {
-  // don't use matrix camera
-  vec2 screenPoint = 2.0 * gl_FragCoord.xy / u_resolution - 1.0;
-  vec2 cameraPoint = screenPoint * tan(u_fov * 0.5);
-  cameraPoint.x *= u_resolution.x / u_resolution.y;
+  vec2 screenCoord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
+  screenCoord.x *= u_resolution.x / u_resolution.y;
 
   vec3 rayOri = u_cameraPos;
-  vec3 rayDir = vec3(cameraPoint.xy, -1.0) - rayOri;
+  vec3 rayDir = vec3(screenCoord, -1.0) - rayOri;
+
+  rayOri = (cameraMatrix * vec4(u_cameraPos, 1.0)).xyz;
+  rayDir = (cameraMatrix * vec4(rayDir, 1.0)).xyz - rayOri;
   rayDir = normalize(rayDir);
 
   outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);

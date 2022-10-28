@@ -20,15 +20,12 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
 
     // scene uniforms
-    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution', 'u_cameraPos', 'u_cameraDir', 'u_fov'], 'scene', 0);
-    sceneUB.bind();
-    // general scene stuff
-    sceneUB.updateVariable('u_resolution', this.width, this.height);
-    sceneUB.updateVariable('u_time', 1);
-    // camera
-    sceneUB.updateVariable('u_cameraPos', 0, 0, 0);
-    sceneUB.updateVariable('u_cameraDir', 0, 0, -0.8);
-    sceneUB.updateVariable('u_fov', 100 * Math.PI / 180.0);
+    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov'], 'camera', 0);
+    cameraUB.bind();
+    cameraUB.updateVariable('u_resolution', this.width, this.height);
+    cameraUB.updateVariable('u_cameraPos', 0, 0, 0);
+    cameraUB.updateVariable('u_cameraRot', 0, 0, 0);
+    cameraUB.updateVariable('u_fov', 90 * Math.PI / 180.0);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -53,9 +50,10 @@ const GraphicsEngine = (function()  {
 
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
-    if (!this.n) this.n = 0; // TEMP
-    this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
-    this.sceneUB.updateVariable('u_cameraPos', Math.cos(this.n / 2) + 0.5, 0, Math.sin(this.n / 2) + 0.5);
+    if (!this.n) this.n = 0;
+    this.n += 0.1;
+    //this.cameraUB.updateVariable('u_cameraPos', Math.cos(this.n / 10), -0.2, Math.sin(this.n / 10));
+    this.cameraUB.updateVariable('u_cameraRot', 0, this.n / 10, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };

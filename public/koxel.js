@@ -109,15 +109,12 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
 
     // scene uniforms
-    const sceneUB = this.sceneUB = new UniformBuffer(gl, program, ['u_time', 'u_resolution', 'u_cameraPos', 'u_cameraDir', 'u_fov'], 'scene', 0);
-    sceneUB.bind();
-    // general scene stuff
-    sceneUB.updateVariable('u_resolution', this.width, this.height);
-    sceneUB.updateVariable('u_time', 1);
-    // camera
-    sceneUB.updateVariable('u_cameraPos', 0, 0, 0);
-    sceneUB.updateVariable('u_cameraDir', 0, 0, -0.8);
-    sceneUB.updateVariable('u_fov', 100 * Math.PI / 180.0);
+    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov'], 'camera', 0);
+    cameraUB.bind();
+    cameraUB.updateVariable('u_resolution', this.width, this.height);
+    cameraUB.updateVariable('u_cameraPos', 0, 0, 0);
+    cameraUB.updateVariable('u_cameraRot', 0, 0, 0);
+    cameraUB.updateVariable('u_fov', 90 * Math.PI / 180.0);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -142,9 +139,10 @@ const GraphicsEngine = (function()  {
 
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
-    if (!this.n) this.n = 0; // TEMP
-    this.sceneUB.updateVariable('u_time', this.n += 1 / 60);
-    this.sceneUB.updateVariable('u_cameraPos', Math.cos(this.n / 2) + 0.5, 0, Math.sin(this.n / 2) + 0.5);
+    if (!this.n) this.n = 0;
+    this.n += 0.1;
+    //this.cameraUB.updateVariable('u_cameraPos', Math.cos(this.n / 10), -0.2, Math.sin(this.n / 10));
+    this.cameraUB.updateVariable('u_cameraRot', 0, this.n / 10, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
@@ -219,16 +217,15 @@ const voxelFragmentGLSL =
 ` #version 300 es
   precision mediump float;
   
-  uniform scene {
-    float u_time;
+  uniform camera {
     vec2 u_resolution;
     vec3 u_cameraPos;
-    vec3 u_cameraDir;
+    vec3 u_cameraRot;
     float u_fov;
   };
   
   vec3 getVoxel(vec3 pos, out bool air) {
-    air = !(length(vec3(pos.x, pos.y + 10.0, pos.z + 40.0)) < 20.0);
+    air = !(length(vec3(pos.xy, pos.z + 30.0)) < 10.0);
     return pos / 40.0 + 0.5; // color
   }
   
@@ -270,16 +267,19 @@ const voxelFragmentGLSL =
     return vec3(0.0, 0.0, 0.0);
   }
   
+  in mat4 cameraMatrix;
+  
   out vec4 outColor;
   
   void main() {
-    // don't use matrix camera
-    vec2 screenPoint = 2.0 * gl_FragCoord.xy / u_resolution - 1.0;
-    vec2 cameraPoint = screenPoint * tan(u_fov * 0.5);
-    cameraPoint.x *= u_resolution.x / u_resolution.y;
+    vec2 screenCoord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
+    screenCoord.x *= u_resolution.x / u_resolution.y;
   
     vec3 rayOri = u_cameraPos;
-    vec3 rayDir = vec3(cameraPoint.xy, -1.0) - rayOri;
+    vec3 rayDir = vec3(screenCoord, -1.0) - rayOri;
+  
+    rayOri = (cameraMatrix * vec4(u_cameraPos, 1.0)).xyz;
+    rayDir = (cameraMatrix * vec4(rayDir, 1.0)).xyz - rayOri;
     rayDir = normalize(rayDir);
   
     outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
@@ -292,9 +292,66 @@ const voxelVertexGLSL =
 ` #version 300 es
   precision mediump float;
   
+  uniform camera {
+    vec2 u_resolution;
+    vec3 u_cameraPos;
+    vec3 u_cameraRot;
+    float u_fov;
+  };
+  
+  mat4 translate(mat4 mat, float tx, float ty, float tz) {
+    return mat * mat4(
+      1, 0, 0, tx,
+      0, 1, 0, ty,
+      0, 0, 1, tz,
+      0, 0, 0, 1
+    );
+  }
+  
+  mat4 rotateX(mat4 mat, float d) {
+    return mat * mat4(
+      1, 0,       0,      0,
+      0, cos(d), -sin(d), 0,
+      0, sin(d),  cos(d), 0,
+      0, 0,       0,      1
+    );
+  }
+  
+  mat4 rotateY(mat4 mat, float d) {
+    return mat * mat4(
+      cos(d),  0, sin(d), 0,
+      0,       1, 0,      0,
+      -sin(d), 0, cos(d), 0,
+      0,       0, 0,      1
+    );
+  }
+  
+  mat4 rotateZ(mat4 mat, float d) {
+    return mat * mat4(
+      cos(d), -sin(d), 0, 0,
+      sin(d), cos(d),  0, 0,
+      0,      0,       1, 0,
+      0,      0,       0, 1
+    );
+  }
+  
   layout (location = 0) in vec4 position;
   
+  out mat4 cameraMatrix;
+  
   void main() {
+    cameraMatrix = mat4(
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    );
+  
+    //cameraMatrix = translate(cameraMatrix, u_cameraPos.x, u_cameraPos.y, u_cameraPos.z);
+    cameraMatrix = rotateX(cameraMatrix, u_cameraRot.x);
+    cameraMatrix = rotateY(cameraMatrix, u_cameraRot.y);
+    cameraMatrix = rotateZ(cameraMatrix, u_cameraRot.z);
+  
     gl_Position = position;
   }`;
 
