@@ -6,11 +6,13 @@ uniform camera {
   vec3 u_cameraPos;
   vec3 u_cameraRot;
   float u_fov;
+  float u_near;
+  float u_far;
 };
 
 vec3 getVoxel(vec3 pos, out bool air) {
-  air = !(length(vec3(pos.xy, pos.z + 30.0)) < 10.0);
-  return pos / 40.0 + 0.5; // color
+  air = !(length(pos) < 25.0);
+  return pos / 50.0 + 0.5; // color
 }
 
 // Amanatides & Woo's fast voxel traversal algorithm
@@ -18,8 +20,8 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
   vec3 voxelPos = floor(rayOri);
   vec3 step = sign(rayDir);
 
-  vec3 tMax = sign(step + 1.0) - voxelPos * -step; 
   vec3 tDelta = step / rayDir;
+  vec3 tMax = tDelta * (sign(step + 1.0) + fract(rayOri) * -step);
 
   float lighting = 0.0;
 
@@ -34,7 +36,7 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
     if (tMax.x < tMax.y && tMax.x < tMax.z) {
       voxelPos.x += step.x;
       tMax.x += tDelta.x;
-      lighting = 0.6;
+      lighting = 0.8;
     }
     else if (tMax.y < tMax.z) {
       voxelPos.y += step.y;
@@ -44,27 +46,27 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
     else {
       voxelPos.z += step.z;
       tMax.z += tDelta.z;
-      lighting = 0.4;
+      lighting = 0.6;
     }
   }
 
   return vec3(0.0, 0.0, 0.0);
 }
 
-in mat4 cameraMatrix;
+in mat3 cameraMatrix;
 
 out vec4 outColor;
 
 void main() {
-  vec2 screenCoord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
-  screenCoord.x *= u_resolution.x / u_resolution.y;
+  vec2 coord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
+  coord.x *= u_resolution.x / u_resolution.y;
 
   vec3 rayOri = u_cameraPos;
-  vec3 rayDir = vec3(screenCoord, -1.0) - rayOri;
+  vec3 rayDir = vec3(coord, -1.0);
 
-  rayOri = (cameraMatrix * vec4(u_cameraPos, 1.0)).xyz;
-  rayDir = (cameraMatrix * vec4(rayDir, 1.0)).xyz - rayOri;
-  rayDir = normalize(rayDir);
+  rayOri = cameraMatrix * rayOri;
+  rayDir = cameraMatrix * rayDir;
+  //rayDir = normalize(rayDir);
 
   outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
 }

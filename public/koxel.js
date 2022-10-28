@@ -41,6 +41,11 @@ function ClientEngine() {
 }
 
 
+/** ./src/client/graphics/camera.js **/
+
+
+
+
 /** ./src/client/graphics/gpuResource.js **/
 
 // for rendering/computation over the GPU
@@ -92,7 +97,7 @@ const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
     // resolution
-    this.pixelSize = 1;
+    this.pixelSize = 3;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
   }
@@ -109,12 +114,14 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
 
     // scene uniforms
-    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov'], 'camera', 0);
+    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov', 'u_near', 'u_far'], 'camera', 0);
     cameraUB.bind();
     cameraUB.updateVariable('u_resolution', this.width, this.height);
-    cameraUB.updateVariable('u_cameraPos', 0, 0, 0);
+    cameraUB.updateVariable('u_cameraPos', 0, 0, 20);
     cameraUB.updateVariable('u_cameraRot', 0, 0, 0);
     cameraUB.updateVariable('u_fov', 90 * Math.PI / 180.0);
+    cameraUB.updateVariable('u_near', 0.3);
+    cameraUB.updateVariable('u_far', 2000);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -140,9 +147,9 @@ const GraphicsEngine = (function()  {
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
     if (!this.n) this.n = 0;
-    this.n += 0.1;
-    //this.cameraUB.updateVariable('u_cameraPos', Math.cos(this.n / 10), -0.2, Math.sin(this.n / 10));
-    this.cameraUB.updateVariable('u_cameraRot', 0, this.n / 10, 0);
+    this.n += 0.02;
+    this.cameraUB.updateVariable('u_cameraPos', 0, 5, 40 + Math.sin(this.n / 2) * 3);
+    this.cameraUB.updateVariable('u_cameraRot', this.n / 10, this.n / 10, this.n / 10);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
@@ -222,11 +229,13 @@ const voxelFragmentGLSL =
     vec3 u_cameraPos;
     vec3 u_cameraRot;
     float u_fov;
+    float u_near;
+    float u_far;
   };
   
   vec3 getVoxel(vec3 pos, out bool air) {
-    air = !(length(vec3(pos.xy, pos.z + 30.0)) < 10.0);
-    return pos / 40.0 + 0.5; // color
+    air = !(length(pos) < 25.0);
+    return pos / 50.0 + 0.5; // color
   }
   
   // Amanatides & Woo's fast voxel traversal algorithm
@@ -234,8 +243,8 @@ const voxelFragmentGLSL =
     vec3 voxelPos = floor(rayOri);
     vec3 step = sign(rayDir);
   
-    vec3 tMax = sign(step + 1.0) - voxelPos * -step; 
     vec3 tDelta = step / rayDir;
+    vec3 tMax = tDelta * (sign(step + 1.0) + fract(rayOri) * -step);
   
     float lighting = 0.0;
   
@@ -250,7 +259,7 @@ const voxelFragmentGLSL =
       if (tMax.x < tMax.y && tMax.x < tMax.z) {
         voxelPos.x += step.x;
         tMax.x += tDelta.x;
-        lighting = 0.6;
+        lighting = 0.8;
       }
       else if (tMax.y < tMax.z) {
         voxelPos.y += step.y;
@@ -260,27 +269,27 @@ const voxelFragmentGLSL =
       else {
         voxelPos.z += step.z;
         tMax.z += tDelta.z;
-        lighting = 0.4;
+        lighting = 0.6;
       }
     }
   
     return vec3(0.0, 0.0, 0.0);
   }
   
-  in mat4 cameraMatrix;
+  in mat3 cameraMatrix;
   
   out vec4 outColor;
   
   void main() {
-    vec2 screenCoord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
-    screenCoord.x *= u_resolution.x / u_resolution.y;
+    vec2 coord = (gl_FragCoord.xy / u_resolution * 2.0 - 1.0) * tan(u_fov * 0.5);
+    coord.x *= u_resolution.x / u_resolution.y;
   
     vec3 rayOri = u_cameraPos;
-    vec3 rayDir = vec3(screenCoord, -1.0) - rayOri;
+    vec3 rayDir = vec3(coord, -1.0);
   
-    rayOri = (cameraMatrix * vec4(u_cameraPos, 1.0)).xyz;
-    rayDir = (cameraMatrix * vec4(rayDir, 1.0)).xyz - rayOri;
-    rayDir = normalize(rayDir);
+    rayOri = cameraMatrix * rayOri;
+    rayDir = cameraMatrix * rayDir;
+    //rayDir = normalize(rayDir);
   
     outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
   }`;
@@ -297,55 +306,49 @@ const voxelVertexGLSL =
     vec3 u_cameraPos;
     vec3 u_cameraRot;
     float u_fov;
+    float u_near;
+    float u_far;
   };
   
-  mat4 translate(mat4 mat, float tx, float ty, float tz) {
-    return mat * mat4(
-      1, 0, 0, tx,
-      0, 1, 0, ty,
-      0, 0, 1, tz,
-      0, 0, 0, 1
+  mat3 identity() {
+    return mat3(
+      1, 0, 0,
+      0, 1, 0,
+      0, 0, 1
     );
   }
   
-  mat4 rotateX(mat4 mat, float d) {
-    return mat * mat4(
-      1, 0,       0,      0,
-      0, cos(d), -sin(d), 0,
-      0, sin(d),  cos(d), 0,
-      0, 0,       0,      1
+  mat3 rotateX(mat3 mat, float t) {
+    return mat * mat3(
+      1, 0,       0,     
+      0, cos(t), -sin(t),
+      0, sin(t),  cos(t)
     );
   }
   
-  mat4 rotateY(mat4 mat, float d) {
-    return mat * mat4(
-      cos(d),  0, sin(d), 0,
-      0,       1, 0,      0,
-      -sin(d), 0, cos(d), 0,
-      0,       0, 0,      1
+  mat3 rotateY(mat3 mat, float t) {
+    return mat * mat3(
+      cos(t),  0, sin(t),
+      0,       1, 0,
+      -sin(t), 0, cos(t)
     );
   }
   
-  mat4 rotateZ(mat4 mat, float d) {
-    return mat * mat4(
-      cos(d), -sin(d), 0, 0,
-      sin(d), cos(d),  0, 0,
-      0,      0,       1, 0,
-      0,      0,       0, 1
+  mat3 rotateZ(mat3 mat, float t) {
+    return mat * mat3(
+      cos(t), -sin(t), 0,
+      sin(t), cos(t),  0,
+      0,      0,       1
     );
   }
   
   layout (location = 0) in vec4 position;
   
-  out mat4 cameraMatrix;
+  out mat3 cameraMatrix;
   
   void main() {
-    cameraMatrix = mat4(
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1
-    );
+    //cameraMatrix = inverse(projection(u_fov, u_resolution.x / u_resolution.y, u_near, u_far));
+    cameraMatrix = identity();
   
     //cameraMatrix = translate(cameraMatrix, u_cameraPos.x, u_cameraPos.y, u_cameraPos.z);
     cameraMatrix = rotateX(cameraMatrix, u_cameraRot.x);

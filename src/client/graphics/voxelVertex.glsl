@@ -6,55 +6,49 @@ uniform camera {
   vec3 u_cameraPos;
   vec3 u_cameraRot;
   float u_fov;
+  float u_near;
+  float u_far;
 };
 
-mat4 translate(mat4 mat, float tx, float ty, float tz) {
-  return mat * mat4(
-    1, 0, 0, tx,
-    0, 1, 0, ty,
-    0, 0, 1, tz,
-    0, 0, 0, 1
+mat3 identity() {
+  return mat3(
+    1, 0, 0,
+    0, 1, 0,
+    0, 0, 1
   );
 }
 
-mat4 rotateX(mat4 mat, float d) {
-  return mat * mat4(
-    1, 0,       0,      0,
-    0, cos(d), -sin(d), 0,
-    0, sin(d),  cos(d), 0,
-    0, 0,       0,      1
+mat3 rotateX(mat3 mat, float t) {
+  return mat * mat3(
+    1, 0,       0,     
+    0, cos(t), -sin(t),
+    0, sin(t),  cos(t)
   );
 }
 
-mat4 rotateY(mat4 mat, float d) {
-  return mat * mat4(
-    cos(d),  0, sin(d), 0,
-    0,       1, 0,      0,
-    -sin(d), 0, cos(d), 0,
-    0,       0, 0,      1
+mat3 rotateY(mat3 mat, float t) {
+  return mat * mat3(
+    cos(t),  0, sin(t),
+    0,       1, 0,
+    -sin(t), 0, cos(t)
   );
 }
 
-mat4 rotateZ(mat4 mat, float d) {
-  return mat * mat4(
-    cos(d), -sin(d), 0, 0,
-    sin(d), cos(d),  0, 0,
-    0,      0,       1, 0,
-    0,      0,       0, 1
+mat3 rotateZ(mat3 mat, float t) {
+  return mat * mat3(
+    cos(t), -sin(t), 0,
+    sin(t), cos(t),  0,
+    0,      0,       1
   );
 }
 
 layout (location = 0) in vec4 position;
 
-out mat4 cameraMatrix;
+out mat3 cameraMatrix;
 
 void main() {
-  cameraMatrix = mat4(
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1
-  );
+  //cameraMatrix = inverse(projection(u_fov, u_resolution.x / u_resolution.y, u_near, u_far));
+  cameraMatrix = identity();
 
   //cameraMatrix = translate(cameraMatrix, u_cameraPos.x, u_cameraPos.y, u_cameraPos.z);
   cameraMatrix = rotateX(cameraMatrix, u_cameraRot.x);
