@@ -8,11 +8,21 @@ uniform camera {
   float u_fov;
   float u_near;
   float u_far;
+  float u_time;
 };
 
 vec3 getVoxel(vec3 pos, out bool air) {
-  air = !(length(pos) < 25.0);
-  return pos / 50.0 + 0.5; // color
+  vec3 ballPos = vec3(int(pos.x) % 100, int(pos.y) % 100, int(pos.z) % 100);
+  if (length(ballPos) + cos(u_time / 20.0) * 5.0 < 20.0) {
+    air = false;
+    return ballPos / 50.0 + 0.5;
+  }
+  else if (pos.y == -25.0) {
+    air = false;
+    return vec3(float(abs(int(pos.x + pos.z + pos.y)) % 2) * 0.3 + 0.7);
+  }
+  air = true;
+  return vec3(0.0, 0.0, 0.0);
 }
 
 // Amanatides & Woo's fast voxel traversal algorithm
@@ -25,7 +35,7 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
 
   float lighting = 0.0;
 
-  int maxSteps = 100;
+  int maxSteps = 800;
   for (int i = 0; i < maxSteps; i ++) {
     bool air;
     vec3 voxel = getVoxel(voxelPos, air);
@@ -64,7 +74,7 @@ void main() {
   vec3 rayOri = u_cameraPos;
   vec3 rayDir = vec3(coord, -1.0);
 
-  rayOri = cameraMatrix * rayOri;
+  rayOri = rayOri * cameraMatrix;
   rayDir = cameraMatrix * rayDir;
   //rayDir = normalize(rayDir);
 

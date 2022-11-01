@@ -8,6 +8,7 @@ uniform camera {
   float u_fov;
   float u_near;
   float u_far;
+  float u_time;
 };
 
 mat3 identity() {
@@ -47,13 +48,11 @@ layout (location = 0) in vec4 position;
 out mat3 cameraMatrix;
 
 void main() {
-  //cameraMatrix = inverse(projection(u_fov, u_resolution.x / u_resolution.y, u_near, u_far));
   cameraMatrix = identity();
 
-  //cameraMatrix = translate(cameraMatrix, u_cameraPos.x, u_cameraPos.y, u_cameraPos.z);
   cameraMatrix = rotateX(cameraMatrix, u_cameraRot.x);
   cameraMatrix = rotateY(cameraMatrix, u_cameraRot.y);
-  cameraMatrix = rotateZ(cameraMatrix, u_cameraRot.z);
+  //cameraMatrix = rotateZ(cameraMatrix, u_cameraRot.z);
 
   gl_Position = position;
 }

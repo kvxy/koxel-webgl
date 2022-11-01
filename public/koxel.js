@@ -45,19 +45,53 @@ function ClientEngine() {
 
 const Camera = (function()  {
 
-  function Camera() {
-    this.position = [0, 0, 0];
+  function Camera(x, y, z) {
+    this.position = [x, y, z];
     this.rotation = [0, 0, 0];
 
-    this.speed = 0.2;
+    this.speed = 5;
     this.sensitivity = 1;
   }
+
+  const keymap = {
+    87: 'forward', // w
+    83: 'back',    // s
+    65: 'left',    // a
+    68: 'right',   // d
+    32: 'up',      // space
+    16: 'down',    // shift
+    17: 'lock'     // ctrl
+  };
+  const input = Object.fromEntries(Object.entries(keymap).map(a => [a[1], false]));
 
   // temp movement for camera
   Camera.prototype.move = function(x, y, z) {
     this.position[0] += x * this.speed;
     this.position[1] += y * this.speed;
     this.position[2] += z * this.speed;
+  };
+
+  Camera.prototype.tick = function() {
+    this.move(input.right - input.left, input.up - input.down, input.back - input.forward);
+  };
+
+  Camera.prototype.addEventListeners = function() {
+    window.addEventListener('keydown', () => {
+      input[keymap[event.keyCode]] = true;
+      if (input.lock) document.getElementById('glcanvas').requestPointerLock();
+    });
+    window.addEventListener('keyup', () => {
+      input[keymap[event.keyCode]] = false;
+    });
+    window.addEventListener('mousemove', e => {
+      if (document.pointerLockElement !== null) {
+        const rot = this.rotation;
+        rot[1] -= e.movementX / 500;
+        rot[0] += e.movementY / 500;
+        if (rot[0] > Math.PI / 2) rot[0] = Math.PI / 2;
+        if (rot[0] < -Math.PI / 2) rot[0] = -Math.PI / 2;
+      }
+    });
   };
 
   return Camera;
@@ -116,9 +150,10 @@ const GraphicsEngine = (function()  {
 
   function GraphicsEngine() {
     // resolution
-    this.pixelSize = 3;
+    this.pixelSize = 2;
     this.width = Math.floor(window.innerWidth / this.pixelSize);
     this.height = Math.floor(window.innerHeight / this.pixelSize);
+    this.time = 0;
   }
   
   GraphicsEngine.prototype.init = function() {
@@ -131,16 +166,21 @@ const GraphicsEngine = (function()  {
     const renderer = new GPUResource(gl, voxelVertexGLSL, voxelFragmentGLSL);
     const program = renderer.program;
     renderer.bind(); // useProgram
+    
+    // temp camera
+    this.camera = new Camera(0, -10, 40);
+    this.camera.addEventListeners();
 
     // scene uniforms
-    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov', 'u_near', 'u_far'], 'camera', 0);
+    const cameraUB = this.cameraUB = new UniformBuffer(gl, program, ['u_resolution', 'u_cameraPos', 'u_cameraRot', 'u_fov', 'u_near', 'u_far', 'u_time'], 'camera', 0);
     cameraUB.bind();
     cameraUB.updateVariable('u_resolution', this.width, this.height);
-    cameraUB.updateVariable('u_cameraPos', 0, 0, 20);
+    cameraUB.updateVariable('u_cameraPos', ...this.camera.position);
     cameraUB.updateVariable('u_cameraRot', 0, 0, 0);
     cameraUB.updateVariable('u_fov', 90 * Math.PI / 180.0);
     cameraUB.updateVariable('u_near', 0.3);
     cameraUB.updateVariable('u_far', 2000);
+    cameraUB.updateVariable('u_time', 0);
 
     // vao
     const vao = this.vao = gl.createVertexArray();
@@ -165,10 +205,13 @@ const GraphicsEngine = (function()  {
 
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
-    if (!this.n) this.n = 0;
-    this.n += 0.02;
-    this.cameraUB.updateVariable('u_cameraPos', 0, 5, 40 + Math.sin(this.n / 2) * 3);
-    this.cameraUB.updateVariable('u_cameraRot', this.n / 10, this.n / 10, this.n / 10);
+    this.time ++;
+    this.camera.tick();
+
+    this.cameraUB.updateVariable('u_time', this.time);
+    //this.cameraUB.updateVariable('u_cameraRot', ...this.camera.rotation);
+    this.cameraUB.updateVariable('u_cameraPos', ...this.camera.position);
+
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   };
@@ -250,11 +293,21 @@ const voxelFragmentGLSL =
     float u_fov;
     float u_near;
     float u_far;
+    float u_time;
   };
   
   vec3 getVoxel(vec3 pos, out bool air) {
-    air = !(length(pos) < 25.0);
-    return pos / 50.0 + 0.5; // color
+    vec3 ballPos = vec3(int(pos.x) % 100, int(pos.y) % 100, int(pos.z) % 100);
+    if (length(ballPos) + cos(u_time / 20.0) * 5.0 < 20.0) {
+      air = false;
+      return ballPos / 50.0 + 0.5;
+    }
+    else if (pos.y == -25.0) {
+      air = false;
+      return vec3(float(abs(int(pos.x + pos.z + pos.y)) % 2) * 0.3 + 0.7);
+    }
+    air = true;
+    return vec3(0.0, 0.0, 0.0);
   }
   
   // Amanatides & Woo's fast voxel traversal algorithm
@@ -267,7 +320,7 @@ const voxelFragmentGLSL =
   
     float lighting = 0.0;
   
-    int maxSteps = 100;
+    int maxSteps = 800;
     for (int i = 0; i < maxSteps; i ++) {
       bool air;
       vec3 voxel = getVoxel(voxelPos, air);
@@ -306,7 +359,7 @@ const voxelFragmentGLSL =
     vec3 rayOri = u_cameraPos;
     vec3 rayDir = vec3(coord, -1.0);
   
-    rayOri = cameraMatrix * rayOri;
+    rayOri = rayOri * cameraMatrix;
     rayDir = cameraMatrix * rayDir;
     //rayDir = normalize(rayDir);
   
@@ -327,6 +380,7 @@ const voxelVertexGLSL =
     float u_fov;
     float u_near;
     float u_far;
+    float u_time;
   };
   
   mat3 identity() {
@@ -366,13 +420,11 @@ const voxelVertexGLSL =
   out mat3 cameraMatrix;
   
   void main() {
-    //cameraMatrix = inverse(projection(u_fov, u_resolution.x / u_resolution.y, u_near, u_far));
     cameraMatrix = identity();
   
-    //cameraMatrix = translate(cameraMatrix, u_cameraPos.x, u_cameraPos.y, u_cameraPos.z);
     cameraMatrix = rotateX(cameraMatrix, u_cameraRot.x);
     cameraMatrix = rotateY(cameraMatrix, u_cameraRot.y);
-    cameraMatrix = rotateZ(cameraMatrix, u_cameraRot.z);
+    //cameraMatrix = rotateZ(cameraMatrix, u_cameraRot.z);
   
     gl_Position = position;
   }`;
