@@ -4,7 +4,7 @@ const Camera = (function()  {
     this.position = [x, y, z];
     this.rotation = [0, 0, 0];
 
-    this.speed = 5;
+    this.speed = 0.05;
     this.sensitivity = 1;
   }
 

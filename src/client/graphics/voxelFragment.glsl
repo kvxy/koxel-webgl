@@ -12,8 +12,8 @@ uniform camera {
 };
 
 vec3 getVoxel(vec3 pos, out bool air) {
-  vec3 ballPos = vec3(int(pos.x) % 100, int(pos.y) % 100, int(pos.z) % 100);
-  if (length(ballPos) + cos(u_time / 20.0) * 5.0 < 20.0) {
+  vec3 ballPos = vec3(int(abs(pos.x)) % 100 - 50, int(abs(pos.y - 50.0)) % 100 - 50, int(abs(pos.z)) % 100 - 50);
+  if (length(ballPos) + cos((pos.x + pos.y + pos.z + u_time) / 50.0) * 5.0 < 20.0) {
     air = false;
     return ballPos / 50.0 + 0.5;
   }

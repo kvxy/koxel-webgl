@@ -21,7 +21,7 @@ const GraphicsEngine = (function()  {
     renderer.bind(); // useProgram
     
     // temp camera
-    this.camera = new Camera(0, -10, 40);
+    this.camera = new Camera(0, -22, 0);
     this.camera.addEventListeners();
 
     // scene uniforms
