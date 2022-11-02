@@ -33,7 +33,7 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
   vec3 tDelta = step / rayDir;
   vec3 tMax = tDelta * (sign(step + 1.0) + fract(rayOri) * -step);
 
-  float lighting = 0.0;
+  float lighting = 1.0;
 
   int maxSteps = 800;
   for (int i = 0; i < maxSteps; i ++) {
@@ -46,7 +46,7 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
     if (tMax.x < tMax.y && tMax.x < tMax.z) {
       voxelPos.x += step.x;
       tMax.x += tDelta.x;
-      lighting = 0.8;
+      lighting = 0.9;
     }
     else if (tMax.y < tMax.z) {
       voxelPos.y += step.y;
@@ -56,8 +56,10 @@ vec3 voxelTrace(vec3 rayOri, vec3 rayDir) {
     else {
       voxelPos.z += step.z;
       tMax.z += tDelta.z;
-      lighting = 0.6;
+      lighting = 0.8;
     }
+
+    lighting -= float(i) / 800.0;
   }
 
   return vec3(0.0, 0.0, 0.0);
@@ -72,11 +74,10 @@ void main() {
   coord.x *= u_resolution.x / u_resolution.y;
 
   vec3 rayOri = u_cameraPos;
-  vec3 rayDir = vec3(coord, -1.0);
+  vec3 rayDir = vec3(coord, 1.0);
 
-  rayOri = rayOri * cameraMatrix;
-  rayDir = cameraMatrix * rayDir;
-  //rayDir = normalize(rayDir);
+  rayOri = rayOri;
+  rayDir = rayDir * cameraMatrix;
 
   outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
 }

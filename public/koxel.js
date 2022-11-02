@@ -49,7 +49,7 @@ const Camera = (function()  {
     this.position = [x, y, z];
     this.rotation = [0, 0, 0];
 
-    this.speed = 0.05;
+    this.speed = 1;
     this.sensitivity = 1;
   }
 
@@ -64,15 +64,24 @@ const Camera = (function()  {
   };
   const input = Object.fromEntries(Object.entries(keymap).map(a => [a[1], false]));
 
-  // temp movement for camera
-  Camera.prototype.move = function(x, y, z) {
-    this.position[0] += x * this.speed;
-    this.position[1] += y * this.speed;
-    this.position[2] += z * this.speed;
+  Camera.prototype.moveX = function(dir) {
+    this.position[2] += Math.cos(this.rotation[1] + Math.PI / 2) * this.speed * dir;
+    this.position[0] += Math.sin(this.rotation[1] + Math.PI / 2) * this.speed * dir;
+  };
+
+  Camera.prototype.moveY = function(dir) {
+    this.position[1] += this.speed * dir;
+  };
+
+  Camera.prototype.moveZ = function(dir) {
+    this.position[2] += Math.cos(this.rotation[1]) * this.speed * dir;
+    this.position[0] += Math.sin(this.rotation[1]) * this.speed * dir;
   };
 
   Camera.prototype.tick = function() {
-    this.move(input.right - input.left, input.up - input.down, input.back - input.forward);
+    this.moveX(input.right - input.left);
+    this.moveY(input.up - input.down);
+    this.moveZ(input.forward - input.back);
   };
 
   Camera.prototype.addEventListeners = function() {
@@ -86,7 +95,7 @@ const Camera = (function()  {
     window.addEventListener('mousemove', e => {
       if (document.pointerLockElement !== null) {
         const rot = this.rotation;
-        rot[1] -= e.movementX / 500;
+        rot[1] += e.movementX / 500;
         rot[0] += e.movementY / 500;
         if (rot[0] > Math.PI / 2) rot[0] = Math.PI / 2;
         if (rot[0] < -Math.PI / 2) rot[0] = -Math.PI / 2;
@@ -205,11 +214,11 @@ const GraphicsEngine = (function()  {
 
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
-    this.time ++;
+    //this.time ++;
     this.camera.tick();
 
     this.cameraUB.updateVariable('u_time', this.time);
-    //this.cameraUB.updateVariable('u_cameraRot', ...this.camera.rotation);
+    this.cameraUB.updateVariable('u_cameraRot', ...this.camera.rotation);
     this.cameraUB.updateVariable('u_cameraPos', ...this.camera.position);
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -318,7 +327,7 @@ const voxelFragmentGLSL =
     vec3 tDelta = step / rayDir;
     vec3 tMax = tDelta * (sign(step + 1.0) + fract(rayOri) * -step);
   
-    float lighting = 0.0;
+    float lighting = 1.0;
   
     int maxSteps = 800;
     for (int i = 0; i < maxSteps; i ++) {
@@ -331,7 +340,7 @@ const voxelFragmentGLSL =
       if (tMax.x < tMax.y && tMax.x < tMax.z) {
         voxelPos.x += step.x;
         tMax.x += tDelta.x;
-        lighting = 0.8;
+        lighting = 0.9;
       }
       else if (tMax.y < tMax.z) {
         voxelPos.y += step.y;
@@ -341,8 +350,10 @@ const voxelFragmentGLSL =
       else {
         voxelPos.z += step.z;
         tMax.z += tDelta.z;
-        lighting = 0.6;
+        lighting = 0.8;
       }
+  
+      lighting -= float(i) / 800.0;
     }
   
     return vec3(0.0, 0.0, 0.0);
@@ -357,11 +368,10 @@ const voxelFragmentGLSL =
     coord.x *= u_resolution.x / u_resolution.y;
   
     vec3 rayOri = u_cameraPos;
-    vec3 rayDir = vec3(coord, -1.0);
+    vec3 rayDir = vec3(coord, 1.0);
   
-    rayOri = rayOri * cameraMatrix;
-    rayDir = cameraMatrix * rayDir;
-    //rayDir = normalize(rayDir);
+    rayOri = rayOri;
+    rayDir = rayDir * cameraMatrix;
   
     outColor = vec4(voxelTrace(rayOri, rayDir), 1.0);
   }`;

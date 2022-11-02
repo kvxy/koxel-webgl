@@ -58,11 +58,11 @@ const GraphicsEngine = (function()  {
 
   GraphicsEngine.prototype.draw = function() {
     const gl = this.gl;
-    this.time ++;
+    //this.time ++;
     this.camera.tick();
 
     this.cameraUB.updateVariable('u_time', this.time);
-    //this.cameraUB.updateVariable('u_cameraRot', ...this.camera.rotation);
+    this.cameraUB.updateVariable('u_cameraRot', ...this.camera.rotation);
     this.cameraUB.updateVariable('u_cameraPos', ...this.camera.position);
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);

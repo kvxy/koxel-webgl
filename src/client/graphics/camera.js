@@ -4,7 +4,7 @@ const Camera = (function()  {
     this.position = [x, y, z];
     this.rotation = [0, 0, 0];
 
-    this.speed = 0.05;
+    this.speed = 1;
     this.sensitivity = 1;
   }
 
@@ -19,15 +19,24 @@ const Camera = (function()  {
   };
   const input = Object.fromEntries(Object.entries(keymap).map(a => [a[1], false]));
 
-  // temp movement for camera
-  Camera.prototype.move = function(x, y, z) {
-    this.position[0] += x * this.speed;
-    this.position[1] += y * this.speed;
-    this.position[2] += z * this.speed;
+  Camera.prototype.moveX = function(dir) {
+    this.position[2] += Math.cos(this.rotation[1] + Math.PI / 2) * this.speed * dir;
+    this.position[0] += Math.sin(this.rotation[1] + Math.PI / 2) * this.speed * dir;
+  };
+
+  Camera.prototype.moveY = function(dir) {
+    this.position[1] += this.speed * dir;
+  };
+
+  Camera.prototype.moveZ = function(dir) {
+    this.position[2] += Math.cos(this.rotation[1]) * this.speed * dir;
+    this.position[0] += Math.sin(this.rotation[1]) * this.speed * dir;
   };
 
   Camera.prototype.tick = function() {
-    this.move(input.right - input.left, input.up - input.down, input.back - input.forward);
+    this.moveX(input.right - input.left);
+    this.moveY(input.up - input.down);
+    this.moveZ(input.forward - input.back);
   };
 
   Camera.prototype.addEventListeners = function() {
@@ -41,7 +50,7 @@ const Camera = (function()  {
     window.addEventListener('mousemove', e => {
       if (document.pointerLockElement !== null) {
         const rot = this.rotation;
-        rot[1] -= e.movementX / 500;
+        rot[1] += e.movementX / 500;
         rot[0] += e.movementY / 500;
         if (rot[0] > Math.PI / 2) rot[0] = Math.PI / 2;
         if (rot[0] < -Math.PI / 2) rot[0] = -Math.PI / 2;
