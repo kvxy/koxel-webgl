@@ -2,5 +2,6 @@
 
 #### Koxel Voxel WebGL Raytracer
 
-Basic WebGL voxel raytracing test.
+Basic WebGL voxel raytracer.
+
 [kvxy.github.io/koxel-webgl](https://kvxy.github.io/koxel-webgl/)
